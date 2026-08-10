@@ -25,7 +25,8 @@ char getchNonBlocking()
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
     return ch;
 }
-
+//hello
+//cheackout
 struct node
 {
     int mi, mj;
