@@ -1,13 +1,40 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
+#include <cstdlib>
+#ifdef _WIN32
+#include <conio.h>
+#include <windows.h>
+#else
 #include <termios.h>
 #include <unistd.h>
-#include <cstdlib>
 #include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#endif
 using namespace std;
 
+void setupConsole() {
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, dwMode);
+        }
+    }
+    SetConsoleOutputCP(CP_UTF8);
+#endif
+}
+
 char getchNonBlocking() {
+#ifdef _WIN32
+    if (_kbhit()) {
+        return _getch();
+    }
+    return 0;
+#else
     char ch = 0;
     termios oldt, newt;
     tcgetattr(STDIN_FILENO, &oldt);
@@ -23,6 +50,7 @@ char getchNonBlocking() {
     }
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
     return ch;
+#endif
 }
 
 struct node {
@@ -50,10 +78,16 @@ public:
 
     void insert(char data) {
         node *n = new node{0, 0, data, NULL};
-        if (head == NULL) head = n;
+        if (head == NULL) {
+            n->mi = m1;
+            n->mj = m2;
+            head = n;
+        }
         else {
             node *tn = head;
             while (tn->next) tn = tn->next;
+            n->mi = tn->mi;
+            n->mj = tn->mj;
             tn->next = n;
         }
     }
@@ -100,6 +134,12 @@ public:
     }
 
     void reset() {
+        node* current = head;
+        while(current != NULL) {
+            node* next = current->next;
+            delete current;
+            current = next;
+        }
         cs = 0; m1 = 1; m2 = 1; dx = 0; dy = 1; hch = '>';
         head = NULL;
         init();
@@ -116,11 +156,11 @@ public:
         fj = (rand() % (c - 2)) + 1;
     }
 
-    void newFood(int r, int c, Snake &snake, char arr[20][50]) {
+    void newFood(int r, int c, Snake &snake, Snake &snake2, char arr[20][50]) {
         do {
             fi = (rand() % (r - 2)) + 1;
             fj = (rand() % (c - 2)) + 1;
-        } while (snake.onSnake(fi, fj) || arr[fi][fj] == '#');
+        } while (snake.onSnake(fi, fj) || snake2.onSnake(fi, fj) || arr[fi][fj] == '#');
     }
 };
 
@@ -147,8 +187,23 @@ class GameBoard {
 
 public:
     Snake snake;
+    Snake snake2;
     Food food;
     Obstacle obstacle;
+
+    GameBoard() {
+        snake2.m1 = r - 2;
+        snake2.m2 = c - 2;
+        snake2.dx = 0;
+        snake2.dy = -1;
+        snake2.hch = '<';
+        node* tn = snake2.head;
+        while(tn) {
+            tn->mi = snake2.m1;
+            tn->mj = snake2.m2;
+            tn = tn->next;
+        }
+    }
 
     void display() {
         string tempstr = "";
@@ -156,7 +211,7 @@ public:
             for (int i = 0; i < (c - 31); i++) tempstr += " ";
         else tempstr += "\n";
 
-        cout << "Current Score:" << snake.cs << tempstr << "High Score:" << snake.hs << endl;
+        cout << "P1 Score:" << snake.cs << "  P2 Score:" << snake2.cs << endl;
         for (int i = 0; i < r; i++) {
             for (int j = 0; j < c; j++) {
                 if (arr[i][j] == ' ')
@@ -186,7 +241,11 @@ public:
                     if (snake.m1 == food.fi && snake.m2 == food.fj) {
                         snake.insert(snake.bch);
                         snake.cs += 10;
-                        food.newFood(r, c, snake, arr);
+                        food.newFood(r, c, snake, snake2, arr);
+                    } else if (snake2.m1 == food.fi && snake2.m2 == food.fj) {
+                        snake2.insert(snake2.bch);
+                        snake2.cs += 10;
+                        food.newFood(r, c, snake, snake2, arr);
                     } else arr[i][j] = 'o';
                 } else arr[i][j] = ' ';
 
@@ -195,30 +254,45 @@ public:
                     arr[tn->mi][tn->mj] = tn->data;
                     tn = tn->next;
                 }
+                tn = snake2.head;
+                while (tn) {
+                    arr[tn->mi][tn->mj] = tn->data;
+                    tn = tn->next;
+                }
             }
         }
         obstacle.draw(arr);
 
-        if ((snake.m1 == 0 || snake.m1 == r - 1) || (snake.m2 == 0 || snake.m2 == c - 1) || snake.hitSnake(snake.m1, snake.m2, arr)) {
-            handleGameOver();
+        bool s1Hit = (snake.m1 == 0 || snake.m1 == r - 1) || (snake.m2 == 0 || snake.m2 == c - 1) || snake.hitSnake(snake.m1, snake.m2, arr) || snake2.onSnake(snake.m1, snake.m2);
+        bool s2Hit = (snake2.m1 == 0 || snake2.m1 == r - 1) || (snake2.m2 == 0 || snake2.m2 == c - 1) || snake2.hitSnake(snake2.m1, snake2.m2, arr) || snake.onSnake(snake2.m1, snake2.m2);
+
+        if (s1Hit || s2Hit) {
+            handleGameOver(s1Hit, s2Hit);
         } else {
             arr[snake.m1][snake.m2] = snake.hch;
+            arr[snake2.m1][snake2.m2] = snake2.hch;
         }
     }
 
-    void handleGameOver() {
-        snake.m1 -= snake.dx;
-        snake.m2 -= snake.dy;
-        arr[snake.m1][snake.m2] = snake.hch;
+    void handleGameOver(bool s1Hit, bool s2Hit) {
+        if (s1Hit) { snake.m1 -= snake.dx; snake.m2 -= snake.dy; arr[snake.m1][snake.m2] = snake.hch; }
+        if (s2Hit) { snake2.m1 -= snake2.dx; snake2.m2 -= snake2.dy; arr[snake2.m1][snake2.m2] = snake2.hch; }
         if (snake.cs > snake.hs) snake.hs = snake.cs;
+        if (snake2.cs > snake2.hs) snake2.hs = snake2.cs;
         display();
-        cout << "Game Over!\nFinal Score: " << snake.cs << "\n" << endl;
+        if (s1Hit && s2Hit) cout << "Game Over! Both players lost!\n" << endl;
+        else if (s1Hit) cout << "Game Over! Player 1 lost!\n" << endl;
+        else cout << "Game Over! Player 2 lost!\n" << endl;
         cout << "Press any key-Restart\nX-Exit\n";
         char c = 0;
         while (c == 0) c = getchNonBlocking();
         switch (c) {
             case 'x': case 'X': exit(0);
-            default: snake.reset(); food.newFood(r, c, snake, arr);
+            default: 
+                snake.reset(); snake2.reset();
+                snake2.m1 = r - 2; snake2.m2 = c - 2; snake2.dx = 0; snake2.dy = -1; snake2.hch = '<'; 
+                node* tn = snake2.head; while(tn) { tn->mi = snake2.m1; tn->mj = snake2.m2; tn = tn->next; }
+                food.newFood(r, c, snake, snake2, arr);
         }
     }
 
@@ -232,12 +306,23 @@ public:
                 case 'C': snake.dx = 0;  snake.dy = 1; snake.hch = '>'; break;
                 case 'D': snake.dx = 0;  snake.dy = -1; snake.hch = '<'; break;
             }
-        } else {
+        }
+#ifdef _WIN32
+        else if (ch == -32 || ch == 224) {
+            switch (getchNonBlocking()) {
+                case 72: snake.dx = -1; snake.dy = 0; snake.hch = '^'; break;
+                case 80: snake.dx = 1;  snake.dy = 0; snake.hch = 'v'; break;
+                case 77: snake.dx = 0;  snake.dy = 1; snake.hch = '>'; break;
+                case 75: snake.dx = 0;  snake.dy = -1; snake.hch = '<'; break;
+            }
+        }
+#endif
+        else {
             switch (ch) {
-                case 'w': case 'W': snake.dx = -1; snake.dy = 0; snake.hch = '^'; break;
-                case 'a': case 'A': snake.dx = 0; snake.dy = -1; snake.hch = '<'; break;
-                case 's': case 'S': snake.dx = 1; snake.dy = 0; snake.hch = 'v'; break;
-                case 'd': case 'D': snake.dx = 0; snake.dy = 1; snake.hch = '>'; break;
+                case 'w': case 'W': snake2.dx = -1; snake2.dy = 0; snake2.hch = '^'; break;
+                case 'a': case 'A': snake2.dx = 0; snake2.dy = -1; snake2.hch = '<'; break;
+                case 's': case 'S': snake2.dx = 1; snake2.dy = 0; snake2.hch = 'v'; break;
+                case 'd': case 'D': snake2.dx = 0; snake2.dy = 1; snake2.hch = '>'; break;
             }
         }
     }
@@ -248,6 +333,9 @@ public:
             snake.m1 += snake.dx;
             snake.m2 += snake.dy;
             snake.changeIndex();
+            snake2.m1 += snake2.dx;
+            snake2.m2 += snake2.dy;
+            snake2.changeIndex();
             createGrid();
             display();
             this_thread::sleep_for(chrono::milliseconds(200));
@@ -256,6 +344,7 @@ public:
 };
 
 int main() {
+    setupConsole();
     GameBoard game;
     game.run();
     return 0;
