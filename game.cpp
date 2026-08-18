@@ -222,22 +222,26 @@ public:
 
     GameBoard()
     {
-        // Centralized location defining how many snakes exist in the game
-        snakes.push_back(Snake());
+        Snake p1;
+        Snake p2;
+        p2.m1 = r - 2;
+        p2.m2 = c - 2;
+        p2.dx = 0;
+        p2.dy = -1;
+        p2.hch = '<';
+        node* tn = p2.head;
+        while (tn) {
+            tn->mi = p2.m1;
+            tn->mj = p2.m2;
+            tn = tn->next;
+        }
+        snakes.push_back(p1);
+        snakes.push_back(p2);
     }
 
     void display()
     {
-        string tempstr = "";
-        if (c > 35)
-        {
-            for (int i = 0; i < (c - 31); i++)
-                tempstr += " ";
-        }
-        else
-            tempstr += "\n";
-
-        cout << "Current Score:" << snakes[0].cs << tempstr << "High Score:" << snakes[0].hs << endl;
+        cout << "P1 Score:" << snakes[0].cs << "  P2 Score:" << snakes[1].cs << endl;
         for (int i = 0; i < r; i++)
         {
             for (int j = 0; j < c; j++)
@@ -300,39 +304,17 @@ public:
             }
         }
 
-        bool anyCollision = false;
-        for (size_t k = 0; k < snakes.size(); k++)
-        {
-            bool wallHit = (snakes[k].m1 == 0 || snakes[k].m1 == r - 1 || snakes[k].m2 == 0 || snakes[k].m2 == c - 1);
-            bool selfHit = snakes[k].hitSnake(snakes[k].m1, snakes[k].m2);
-            bool otherHit = false;
-            for (size_t j = 0; j < snakes.size(); j++)
-            {
-                if (j != k && snakes[j].onSnake(snakes[k].m1, snakes[k].m2))
-                {
-                    otherHit = true;
-                    break;
-                }
-            }
-            if (wallHit || selfHit || otherHit)
-            {
-                anyCollision = true;
-                snakes[k].m1 -= snakes[k].dx;
-                snakes[k].m2 -= snakes[k].dy;
-                arr[snakes[k].m1][snakes[k].m2] = snakes[k].hch;
-            }
-            else
-            {
-                arr[snakes[k].m1][snakes[k].m2] = snakes[k].hch;
-            }
-        }
+        bool s1Hit = (snakes[0].m1 == 0 || snakes[0].m1 == r - 1 || snakes[0].m2 == 0 || snakes[0].m2 == c - 1) || snakes[0].hitSnake(snakes[0].m1, snakes[0].m2) || snakes[1].onSnake(snakes[0].m1, snakes[0].m2);
+        bool s2Hit = (snakes[1].m1 == 0 || snakes[1].m1 == r - 1 || snakes[1].m2 == 0 || snakes[1].m2 == c - 1) || snakes[1].hitSnake(snakes[1].m1, snakes[1].m2) || snakes[0].onSnake(snakes[1].m1, snakes[1].m2);
 
-        if (anyCollision)
+        if (s1Hit || s2Hit)
         {
-            if (snakes[0].cs > snakes[0].hs)
-                snakes[0].hs = snakes[0].cs;
+            if (s1Hit) { snakes[0].m1 -= snakes[0].dx; snakes[0].m2 -= snakes[0].dy; arr[snakes[0].m1][snakes[0].m2] = snakes[0].hch; }
+            if (s2Hit) { snakes[1].m1 -= snakes[1].dx; snakes[1].m2 -= snakes[1].dy; arr[snakes[1].m1][snakes[1].m2] = snakes[1].hch; }
             display();
-            cout << "Game Over!\nFinal Score: " << snakes[0].cs << "\n" << endl;
+            if (s1Hit && s2Hit) cout << "Game Over! Both players lost!\n" << endl;
+            else if (s1Hit) cout << "Game Over! Player 1 lost!\n" << endl;
+            else cout << "Game Over! Player 2 lost!\n" << endl;
             cout << "Press any key-Restart\nX-Exit\n";
             char c = 0;
             while (c == 0) c = getchNonBlocking();
@@ -342,9 +324,26 @@ public:
                 case 'x':
                 case 'X': exit(0);
                 default:
-                    for (auto &s : snakes) s.reset();
+                    snakes[0].reset();
+                    snakes[1].reset();
+                    snakes[1].m1 = r - 2;
+                    snakes[1].m2 = c - 2;
+                    snakes[1].dx = 0;
+                    snakes[1].dy = -1;
+                    snakes[1].hch = '<';
+                    node* tn = snakes[1].head;
+                    while (tn) {
+                        tn->mi = snakes[1].m1;
+                        tn->mj = snakes[1].m2;
+                        tn = tn->next;
+                    }
                     food.newFood(r, c, snakes);
             }
+        }
+        else
+        {
+            arr[snakes[0].m1][snakes[0].m2] = snakes[0].hch;
+            arr[snakes[1].m1][snakes[1].m2] = snakes[1].hch;
         }
     }
 
@@ -376,10 +375,10 @@ public:
         {
             switch (ch)
             {
-                case 'w': case 'W': snakes[0].dx = -1; snakes[0].dy = 0; snakes[0].hch = '^'; break;
-                case 'a': case 'A': snakes[0].dx = 0; snakes[0].dy = -1; snakes[0].hch = '<'; break;
-                case 's': case 'S': snakes[0].dx = 1; snakes[0].dy = 0; snakes[0].hch = 'v'; break;
-                case 'd': case 'D': snakes[0].dx = 0; snakes[0].dy = 1; snakes[0].hch = '>'; break;
+                case 'w': case 'W': snakes[1].dx = -1; snakes[1].dy = 0; snakes[1].hch = '^'; break;
+                case 'a': case 'A': snakes[1].dx = 0; snakes[1].dy = -1; snakes[1].hch = '<'; break;
+                case 's': case 'S': snakes[1].dx = 1; snakes[1].dy = 0; snakes[1].hch = 'v'; break;
+                case 'd': case 'D': snakes[1].dx = 0; snakes[1].dy = 1; snakes[1].hch = '>'; break;
             }
         }
     }
